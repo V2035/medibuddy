@@ -195,7 +195,8 @@ CASES = [
     EvalCase(
         "clear_match_uv_running",
         "A direct question that should trigger the UV or heat SOP for strenuous exercise.",
-        "matched_sop_id is SOP-001 or SOP-010 and the answer references it.",
+        "matched_sop_id is SOP-001 or SOP-010 when UV/heat is genuinely elevated, or an "
+        "honest no-match when it isn't -- both are correct given real-time UV dependency.",
         case_clear_match_uv,
     ),
     EvalCase(
