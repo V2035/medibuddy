@@ -1,0 +1,219 @@
+# sops.yaml
+#
+# These are the Standard Operating Procedures (SOPs): the ONLY source of
+# safety advice the bot is allowed to give. The bot's job is to match a
+# user's question + live weather facts against these rules -- never to
+# invent its own judgment.
+#
+# WHY YAML, NOT JSON:
+# SOPs need a natural-language "condition" field for the fuzzy cases
+# (see picnic_suitability below) that a numeric-only schema (JSON with
+# strict operators) can't express well. YAML lets us mix structured
+# numeric thresholds with a plain-English condition description that an
+# LLM can reason over, while staying easy for a non-engineer to read and
+# edit. Adding SOP #11 live = adding one block below. No code changes.
+#
+# SCHEMA (per SOP):
+#   id            - stable unique identifier, referenced in bot answers for traceability
+#   category      - one of: outdoor_exercise | travel | vulnerable_groups | general_activity
+#   severity      - one of: advisory | caution | warning | danger  (low -> high)
+#   condition     - natural-language description of when this rule applies.
+#                   This is what the LLM matcher reasons over. Structured
+#                   thresholds below are a machine-checkable hint, not a
+#                   replacement -- some SOPs (fuzzy ones) have no thresholds at all.
+#   thresholds    - optional structured numeric checks, used as a fast-path
+#                   deterministic pre-filter before the fuzzy LLM match
+#   activities    - which activity keywords this SOP is relevant to (hint only)
+#   advice        - the exact guidance text the bot must relay if this SOP matches.
+#                   The bot may lightly rephrase for conversational tone, but
+#                   must not add facts or advice beyond what's written here.
+
+sops:
+
+  - id: SOP-001
+    category: outdoor_exercise
+    severity: warning
+    condition: >
+      UV index is 8 or higher at any point between 11am and 4pm local time.
+    thresholds:
+      field: uv_index
+      operator: ">="
+      value: 8
+      time_window: ["11:00", "16:00"]
+    activities: [running, cycling, exercise, sports, walking]
+    advice: >
+      UV levels are high enough to cause sunburn quickly during this window.
+      Avoid unprotected outdoor exercise between 11am and 4pm; if you must go
+      out, wear sunscreen (SPF 30+), sunglasses, and consider rescheduling to
+      early morning or evening.
+
+  - id: SOP-002
+    category: travel
+    severity: caution
+    condition: >
+      Precipitation probability is 70% or higher and the user is asking about
+      travel, commuting, or a trip.
+    thresholds:
+      field: precipitation_probability
+      operator: ">="
+      value: 70
+    activities: [travel, commute, driving, trip, flight, road trip]
+    advice: >
+      There's a high chance of rain today, which can cause travel delays.
+      Recommend checking for traffic or transit alerts before departure and
+      allowing extra time.
+
+  - id: SOP-003
+    category: outdoor_exercise
+    severity: warning
+    condition: >
+      Wind speed exceeds 40 km/h and the user mentions cycling, biking, or a
+      two-wheeler.
+    thresholds:
+      field: wind_speed_10m
+      operator: ">"
+      value: 40
+    activities: [cycling, biking, two-wheeler, motorcycle, scooter]
+    advice: >
+      Wind speeds are high enough to be a real safety risk for two-wheelers,
+      not just a comfort issue -- gusts can destabilize a bike or scooter.
+      Advise against cycling or riding until winds ease, or suggest an
+      alternate route with more shelter.
+
+  - id: SOP-004
+    category: general_activity
+    severity: danger
+    condition: >
+      A well-marked low-pressure system, cyclonic circulation, or IMD-flagged
+      heavy-to-very-heavy rainfall system is actively affecting the user's
+      location, regardless of what specific numeric thresholds show in
+      isolation. This applies even if individual readings (wind, rainfall)
+      don't look extreme on their own -- the presence of an active flagged
+      weather system is itself the trigger.
+    thresholds: null
+    activities: [any]
+    advice: >
+      There is an active significant weather system (heavy rain / storm
+      circulation) affecting your area right now. Treat any outdoor activity
+      today as high risk regardless of what you were planning. Lead with this
+      warning before any activity-specific advice, and recommend postponing
+      non-essential outdoor plans and checking official alerts.
+
+  - id: SOP-005
+    category: vulnerable_groups
+    severity: warning
+    condition: >
+      Temperature is 38C or higher, or UV index is 7 or higher, and the user
+      mentions children, kids, elderly, or infants going outside.
+    thresholds:
+      field: temperature_2m
+      operator: ">="
+      value: 38
+    activities: [park, playground, walk, elderly, kids, children, infant]
+    advice: >
+      Heat and sun exposure are riskier for young children and elderly people
+      than for a typical adult. Recommend avoiding outdoor time during peak
+      heat hours (roughly 12pm-4pm), keeping trips short, and prioritizing
+      shaded areas with water available.
+
+  - id: SOP-006
+    category: vulnerable_groups
+    severity: caution
+    condition: >
+      Precipitation is currently occurring (non-zero) or precipitation
+      probability is 60% or higher, and the user mentions pets going outside.
+    thresholds:
+      field: precipitation_probability
+      operator: ">="
+      value: 60
+    activities: [dog, pet, walk the dog]
+    advice: >
+      Wet conditions can make walks uncomfortable and slippery for pets.
+      Suggest a shorter walk, waterproof gear if available, or waiting for a
+      drier window later in the day.
+
+  - id: SOP-007
+    category: outdoor_exercise
+    severity: advisory
+    condition: >
+      Weather is clear or mildly cloudy, temperature is between 15C and 30C,
+      wind speed is below 25 km/h, and precipitation probability is below 30%.
+    thresholds: null
+    activities: [any]
+    advice: >
+      Conditions look favorable for outdoor activity today -- comfortable
+      temperature, low wind, and low chance of rain. No specific precautions
+      needed beyond normal sun awareness.
+
+  - id: SOP-008
+    category: general_activity
+    severity: caution
+    condition: >
+      The user is asking a fuzzy, non-numeric suitability question (e.g. "is
+      today good for a picnic / outdoor gathering / hangout") rather than
+      naming a specific activity with a clean threshold. Judge suitability
+      holistically: comfortable temperature range (18-30C), low precipitation
+      probability (under 30%), moderate wind (under 20 km/h), and no active
+      severe weather system. This is a judgment call across multiple soft
+      signals together, not a single hard cutoff.
+    thresholds: null
+    activities: [picnic, hangout, outdoor gathering, bbq, outing]
+    advice: >
+      Weigh temperature comfort, rain chance, and wind together rather than
+      any single number. If most factors are favorable, advise it looks like
+      a reasonably good day but recommend checking again closer to the time
+      since conditions can shift. If multiple factors are poor, recommend
+      an indoor backup plan.
+
+  - id: SOP-009
+    category: travel
+    severity: danger
+    condition: >
+      Wind gusts reach 60 km/h or higher near coastal areas, or the user
+      mentions boating, fishing, or coastal travel during squally or stormy
+      wind conditions.
+    thresholds:
+      field: wind_gusts_10m
+      operator: ">="
+      value: 60
+    activities: [boating, fishing, coastal, sailing, beach trip]
+    advice: >
+      Gusts at this speed are dangerous for small boats and coastal activity.
+      Strongly advise against boating, fishing trips, or beach activities
+      involving water until conditions ease, and to check official marine
+      warnings.
+
+  - id: SOP-010
+    category: outdoor_exercise
+    severity: caution
+    condition: >
+      Temperature is 35C or higher (regardless of UV index) and the user is
+      asking about any strenuous outdoor exercise (running, sports, cycling).
+    thresholds:
+      field: temperature_2m
+      operator: ">="
+      value: 35
+    activities: [running, exercise, sports, cycling, jogging]
+    advice: >
+      High heat significantly raises the risk of dehydration and heat
+      exhaustion during strenuous activity. Recommend exercising during
+      cooler hours (early morning/evening), staying well hydrated, and
+      reducing intensity if going out during peak heat.
+
+  - id: SOP-011
+    category: vulnerable_groups
+    severity: warning
+    condition: >
+      Precipitation probability is 70% or higher, or an active severe weather
+      system is present, and the user mentions school pickup/drop-off,
+      commute for children, or elderly persons traveling outdoors.
+    thresholds:
+      field: precipitation_probability
+      operator: ">="
+      value: 70
+    activities: [school, pickup, drop-off, elderly commute]
+    advice: >
+      Wet or severe conditions make outdoor commutes riskier for children and
+      elderly travelers specifically (slippery surfaces, reduced visibility).
+      Recommend extra travel time, appropriate rain gear, and avoiding
+      unnecessary additional trips during the worst of the window.

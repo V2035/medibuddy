@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Weather-Advisory Support Bot</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 24px;
+    background: #0f1115;
+    color: #e7e9ee;
+  }
+  h1 { font-size: 1.25rem; margin-bottom: 4px; }
+  .sub { color: #9aa1ac; font-size: 0.85rem; margin-bottom: 16px; }
+  #thread {
+    border: 1px solid #2a2e37;
+    border-radius: 10px;
+    padding: 16px;
+    height: 60vh;
+    overflow-y: auto;
+    background: #151820;
+  }
+  .msg { margin: 10px 0; line-height: 1.45; white-space: pre-wrap; }
+  .msg .who { font-weight: 600; margin-right: 6px; }
+  .msg.user .who { color: #7fb2ff; }
+  .msg.bot .who { color: #7fe0a0; }
+  .msg.meta { font-size: 0.78rem; color: #7d8493; margin-top: -6px; }
+  #inputRow { display: flex; gap: 8px; margin-top: 12px; }
+  #inputBox {
+    flex: 1;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid #2a2e37;
+    background: #151820;
+    color: #e7e9ee;
+    font-size: 0.95rem;
+  }
+  button {
+    padding: 10px 16px;
+    border-radius: 8px;
+    border: none;
+    background: #3a7bfd;
+    color: white;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button.secondary { background: #2a2e37; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  #status { font-size: 0.8rem; color: #9aa1ac; margin-top: 8px; }
+</style>
+</head>
+<body>
+  <h1>🌦️ Weather-Advisory Support Bot</h1>
+  <div class="sub">
+    Ask things like "is it safe to cycle in Bhopal today?" or "is today good for a picnic in Chennai?"
+    Every answer is grounded in live weather data and a specific policy (SOP), or an honest "no guidance for that."
+  </div>
+
+  <div id="thread"></div>
+
+  <div id="inputRow">
+    <input id="inputBox" type="text" placeholder="Type a question..." autocomplete="off" />
+    <button id="sendBtn">Send</button>
+    <button id="resetBtn" class="secondary">New chat</button>
+  </div>
+  <div id="status"></div>
+
+<script>
+  // Point this at wherever `uvicorn main:app` is running.
+  const API_BASE = "http://127.0.0.1:8000";
+
+  let sessionId = null;
+
+  const thread = document.getElementById("thread");
+  const inputBox = document.getElementById("inputBox");
+  const sendBtn = document.getElementById("sendBtn");
+  const resetBtn = document.getElementById("resetBtn");
+  const statusEl = document.getElementById("status");
+
+  function addMessage(who, text, metaText) {
+    const wrap = document.createElement("div");
+    wrap.className = "msg " + (who === "You" ? "user" : "bot");
+    wrap.innerHTML = `<span class="who">${who}:</span>${escapeHtml(text)}`;
+    thread.appendChild(wrap);
+
+    if (metaText) {
+      const meta = document.createElement("div");
+      meta.className = "msg meta";
+      meta.textContent = metaText;
+      thread.appendChild(meta);
+    }
+    thread.scrollTop = thread.scrollHeight;
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement("div");
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  async function sendMessage() {
+    const text = inputBox.value.trim();
+    if (!text) return;
+
+    addMessage("You", text);
+    inputBox.value = "";
+    sendBtn.disabled = true;
+    statusEl.textContent = "Thinking...";
+
+    try {
+      const resp = await fetch(`${API_BASE}/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: text, session_id: sessionId }),
+      });
+
+      if (!resp.ok) {
+        throw new Error(`Server returned ${resp.status}`);
+      }
+
+      const data = await resp.json();
+      sessionId = data.session_id;
+
+      let meta = "";
+      if (data.matched_sop_id) meta += `policy: ${data.matched_sop_id}`;
+      if (data.resolved_location) meta += (meta ? " · " : "") + `location: ${data.resolved_location}`;
+
+      addMessage("Bot", data.reply, meta || null);
+      statusEl.textContent = "";
+    } catch (err) {
+      addMessage("Bot", "Something went wrong reaching the backend. Is `uvicorn main:app` running on port 8000?");
+      statusEl.textContent = String(err);
+    } finally {
+      sendBtn.disabled = false;
+      inputBox.focus();
+    }
+  }
+
+  async function resetChat() {
+    thread.innerHTML = "";
+    if (sessionId) {
+      try {
+        await fetch(`${API_BASE}/reset?session_id=${encodeURIComponent(sessionId)}`, { method: "POST" });
+      } catch (e) { /* best effort */ }
+    }
+    sessionId = null;
+    statusEl.textContent = "New session started.";
+  }
+
+  sendBtn.addEventListener("click", sendMessage);
+  resetBtn.addEventListener("click", resetChat);
+  inputBox.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") sendMessage();
+  });
+</script>
+</body>
+</html>
